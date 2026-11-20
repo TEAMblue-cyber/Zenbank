@@ -1,15 +1,20 @@
 {
-  "name": "zenbank-security-lab",
+  "name": "zenbank-ctf",
   "version": "1.0.0",
-  "description": "ZenBank security simulation",
+  "private": true,
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.1",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "helmet": "^8.0.0"
+    "@supabase/supabase-js": "^2.45.0",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0"
   }
 }
