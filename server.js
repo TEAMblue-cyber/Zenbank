@@ -16,7 +16,7 @@ for (const k of ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "ADMIN_DEFAULT_PASSWORD
 
 // ---------- config ----------
 // >>> PUT YOUR ADMIN EMAILS HERE (lowercase). Each one becomes an admin with the default password. <<<
-const ADMIN_EMAILS = ["admin@example.com", "teammate@example.com"];
+const ADMIN_EMAILS = ["whitefrostff@gmail.com", "teammate@example.com"];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);                 // longer than this => redirect
 const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
 
