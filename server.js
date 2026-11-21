@@ -20,7 +20,10 @@ const ADMIN_EMAILS = ["admin@example.com", "teammate@example.com"];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);                 // longer than this => redirect
 const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
 
-const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+// Keep only https://PROJECT.supabase.co (strips a pasted /rest/v1/ or trailing slash, which causes PGRST125) and trim the key
+let SUPABASE_URL;
+try { SUPABASE_URL = new URL(env.SUPABASE_URL.trim()).origin; } catch { console.error("SUPABASE_URL is not a valid URL"); process.exit(1); }
+const db = createClient(SUPABASE_URL, env.SUPABASE_SERVICE_KEY.trim(), { auth: { persistSession: false } });
 const indexHtml = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const adminHtml = fs.readFileSync(path.join(__dirname, "admin.html"), "utf8");
 
@@ -299,7 +302,7 @@ async function seedAdmins() {
 
 app.listen(env.PORT || 3000, () => console.log("ZenBank listening on :" + (env.PORT || 3000)));
 // Startup self-check: shows the real Supabase problem (wrong key/URL, tables missing) in the Render logs
-db.from("users").select("id", { head: true, count: "exact" })
+db.from("users").select("id").limit(1)
   .then(({ error }) => console.log(error ? "SUPABASE CHECK FAILED: " + error.message : "Supabase connected OK"))
   .then(() => seedAdmins())
   .catch(e => console.error("Startup failed:", e.message));
