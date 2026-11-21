@@ -16,7 +16,12 @@ for (const k of ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "ADMIN_DEFAULT_PASSWORD
 
 // ---------- config ----------
 // >>> PUT YOUR ADMIN EMAILS HERE (lowercase). Each one becomes an admin with the default password. <<<
-const ADMIN_EMAILS = ["whitefrostff@gmail.com", "teammate@example.com"];
+const ADMIN_EMAILS = [
+  "whitefrostff@gmail.com",
+  "ahamefulachibuike56@gmail.com",
+  "senatoramuh203@gmail.com",
+  "hamnasaleem595@gmail.com",
+];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);                 // longer than this => redirect
 const REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
 
@@ -287,15 +292,20 @@ app.use((err, req, res, next) => {
 
 // ---------- seed admins: every email in ADMIN_EMAILS gets the default password ----------
 async function seedAdmins() {
-  const hash = await bcrypt.hash(env.ADMIN_DEFAULT_PASSWORD, 12);
+  const adminPw = env.ADMIN_DEFAULT_PASSWORD.trim();
+  const hash = await bcrypt.hash(adminPw, 12);
   for (const email of ADMIN_EMAILS) {
-    const { data: u } = await db.from("users").select("id,role").eq("email", email).maybeSingle();
+    const { data: u } = await db.from("users").select("id,role,password_hash").eq("email", email).maybeSingle();
     if (!u) {
       const { error } = await db.from("users").insert({ name: email.split("@")[0], email, password_hash: hash, role: "admin", balance_cents: 0 });
       console.log(error ? "ADMIN CREATE FAILED for " + email + ": " + error.message : "Created admin: " + email);
     } else if (u.role !== "admin") {
       await db.from("users").update({ role: "admin", password_hash: hash }).eq("id", u.id);
       console.log("Promoted to admin:", email);
+    } else if (!(await bcrypt.compare(adminPw, u.password_hash))) {
+      // ADMIN_DEFAULT_PASSWORD changed on Render: existing admins pick up the new one on restart
+      await db.from("users").update({ password_hash: hash }).eq("id", u.id);
+      console.log("Updated admin password:", email);
     }
   }
 }
