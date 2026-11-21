@@ -145,7 +145,10 @@ app.post("/api/auth/signup", limiter(15), wrap(async (req, res) => {
   if (ADMIN_EMAILS.includes(email)) return res.status(400).json({ error: "Email already registered" });
   const { data, error } = await db.from("users")
     .insert({ name, email, password_hash: await bcrypt.hash(password, 12), role: "user" }).select().single();
-  if (error) return res.status(400).json({ error: error.code === "23505" ? "Email already registered" : "Could not create account" });
+  if (error) {
+    if (error.code !== "23505") console.error("SIGNUP INSERT FAILED:", error.code, error.message);
+    return res.status(400).json({ error: error.code === "23505" ? "Email already registered" : "Could not create account" });
+  }
   await audit("signup", "low", req, email);
   await db.from("notifications").insert({ user_id: data.id, title: "Welcome to ZenBank", body: "Your demo account is ready with fictional funds." });
   issueSession(res, data);
@@ -285,8 +288,8 @@ async function seedAdmins() {
   for (const email of ADMIN_EMAILS) {
     const { data: u } = await db.from("users").select("id,role").eq("email", email).maybeSingle();
     if (!u) {
-      await db.from("users").insert({ name: email.split("@")[0], email, password_hash: hash, role: "admin", balance_cents: 0 });
-      console.log("Created admin:", email);
+      const { error } = await db.from("users").insert({ name: email.split("@")[0], email, password_hash: hash, role: "admin", balance_cents: 0 });
+      console.log(error ? "ADMIN CREATE FAILED for " + email + ": " + error.message : "Created admin: " + email);
     } else if (u.role !== "admin") {
       await db.from("users").update({ role: "admin", password_hash: hash }).eq("id", u.id);
       console.log("Promoted to admin:", email);
@@ -295,7 +298,11 @@ async function seedAdmins() {
 }
 
 app.listen(env.PORT || 3000, () => console.log("ZenBank listening on :" + (env.PORT || 3000)));
-seedAdmins().catch(e => console.error("Admin seed failed:", e.message));
+// Startup self-check: shows the real Supabase problem (wrong key/URL, tables missing) in the Render logs
+db.from("users").select("id", { head: true, count: "exact" })
+  .then(({ error }) => console.log(error ? "SUPABASE CHECK FAILED: " + error.message : "Supabase connected OK"))
+  .then(() => seedAdmins())
+  .catch(e => console.error("Startup failed:", e.message));
 
 /* =====================================================================
    SUPABASE SCHEMA — run this once in Supabase: SQL Editor -> New query -> Run
