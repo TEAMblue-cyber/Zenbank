@@ -20,6 +20,7 @@ const ADMIN_EMAILS = [
   "ahamefulachibuike56@gmail.com",
   "senatoramuh203@gmail.com",
   "hamnasaleem595@gmail.com",
+  "anishanandhanal@gmail.com",
 ];
 const MAX_PW = Number(env.MAX_PASSWORD_LENGTH || 64);
 let REDIRECT_URL = env.LONG_PASSWORD_REDIRECT_URL || "https://www.google.com";
